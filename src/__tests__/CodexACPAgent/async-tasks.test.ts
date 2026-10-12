@@ -34,6 +34,19 @@ describe("Codex background terminal tasks", () => {
         } finally {fixture.tasks.clear();}
     });
 
+    it("corrects uncertain disappearance with a later native completion", async () => {
+        const fixture = createFixture(true, undefined, true);
+        try {
+            fixture.list.mockResolvedValue(page([terminal()]));
+            await fixture.tasks.handleNotification(started(command()), "thread-1");
+            await fixture.tasks.sync();
+            fixture.list.mockResolvedValue(page([]));
+            await fixture.tasks.sync();
+            await fixture.tasks.handleNotification(completed({...command(),status:"completed",aggregatedOutput:"confirmed"}),"thread-1");
+            expect(fixture.updates.at(-1)).toMatchObject({state:"completed",_meta:{cloudcode:{terminalEvidence:"event"}}});
+        } finally { fixture.tasks.clear(); }
+    });
+
     it("distinguishes disappearance from a native command completion", async () => {
         const fixture = createFixture(true, undefined, true);
         try {

@@ -44,6 +44,8 @@ type TerminalSnapshot = {
 export class CodexBackgroundTerminalTasks {
     /** The live tasks. A task leaves the map when it ends, so the map holds only the running commands. */
     private readonly tasks = new Map<string, Task>();
+    // Keep session-owned uncertain tombstones so a later native event can correct them.
+    private readonly uncertain = new Map<string, Task>();
     /**
      * The thread of each task that ended while Codex can still list it, for example from a list that started
      * before the end. A task leaves the map when a list of its thread no longer names it.
@@ -107,7 +109,8 @@ export class CodexBackgroundTerminalTasks {
         threadId: string,
     ): Promise<void> {
         if (!this.isActive()) return;
-        const task = this.tasks.get(wireTaskId(this.rootSessionId, threadId, item.id));
+        const taskId = wireTaskId(this.rootSessionId, threadId, item.id);
+        const task = this.tasks.get(taskId) ?? this.uncertain.get(taskId);
         if (task) {
             // app-server can omit early output deltas while still returning the complete native snapshot.
             // Do not append this snapshot as a delta: clients must replace their retained byte window.
@@ -231,6 +234,7 @@ export class CodexBackgroundTerminalTasks {
         this.appServerGeneration += 1;
         this.appServerQueriesEnabled = false;
         this.tasks.clear();
+        this.uncertain.clear();
         this.ended.clear();
         this.syncs.clear();
     }
@@ -404,7 +408,12 @@ export class CodexBackgroundTerminalTasks {
     }
 
     private async finish(task: Task, state: TerminalState, evidence: Task["terminalEvidence"] = "event"): Promise<void> {
-        if (task.state === "running" || task.state === "stopping") {
+        if (evidence === "event" && task.terminalEvidence !== "event") {
+            task.state = state;
+            task.terminalEvidence = evidence;
+            task.terminalPublished = false;
+            this.uncertain.delete(task.asyncTaskId);
+        } else if (task.state === "running" || task.state === "stopping") {
             task.state = state;
             task.terminalEvidence = evidence;
         } else if (task.state !== state) {
@@ -433,6 +442,9 @@ export class CodexBackgroundTerminalTasks {
         try {
             await terminalUpdate;
             task.terminalPublished = true;
+            if (this.terminalEvidence && task.terminalEvidence !== "event") {
+                this.uncertain.set(task.asyncTaskId, task);
+            }
             this.forget(task);
         } finally {
             if (task.terminalUpdate === terminalUpdate) task.terminalUpdate = null;
