@@ -14,6 +14,7 @@ import os from "node:os";
 import {AgentMode} from "../AgentMode";
 import {DEFAULT_COLLABORATION_MODE} from "../CollaborationModeConfig";
 import {afterEach, expect, vi} from "vitest";
+import {once} from "node:events";
 import type {Model, ReasoningEffortOption} from "../app-server/v2";
 import {CodexSubagentEventRouter} from "../subagents/CodexSubagentEventRouter";
 import {CodexEventHandler} from "../CodexEventHandler";
@@ -22,6 +23,17 @@ import {CodexBackgroundTerminalTasks} from "../async-tasks/CodexBackgroundTermin
 import {CodexSessionCompactions} from "../CodexSessionCompactions";
 import {AUTH_STATUS_UPDATE_METHOD} from "../AuthStatusMeta";
 import {ClientCapabilities} from "../tool-calls/ClientCapabilities";
+
+const nativeTestProcesses = new Set<CodexConnection>();
+afterEach(async () => {
+    await Promise.all([...nativeTestProcesses].map(async native => {
+        if (native.process.exitCode !== null || native.process.signalCode !== null) return;
+        const exited = once(native.process, "exit");
+        native.process.kill();
+        await exited;
+    }));
+    nativeTestProcesses.clear();
+});
 
 export type MethodCallEvent = { method: string; args: any[] };
 
@@ -189,13 +201,6 @@ export function createBaseTestFixture(config: ConnectionConfig): TestFixture {
  * Creates a test fixture with a real Codex connection.
  * Use for integration tests that need to interact with the actual Codex binary.
  */
-const nativeFixtureCleanup = new Set<() => Promise<void>>();
-afterEach(async () => {
-    const pending = [...nativeFixtureCleanup];
-    nativeFixtureCleanup.clear();
-    await Promise.all(pending.map(cleanup => cleanup()));
-});
-
 export function createTestFixture(): TestFixture {
     const pathToCodex = path.resolve(process.cwd(), "node_modules", ".bin", process.platform === 'win32' ? "codex.cmd" : "codex");
     if (!fs.existsSync(pathToCodex)) {
@@ -207,20 +212,9 @@ export function createTestFixture(): TestFixture {
         ...process.env,
         CODEX_HOME: codexHome,
     });
-    // Real fixtures previously accumulated app-servers until the worker exited,
-    // starving later initialize requests and making unrelated commands time out.
-    nativeFixtureCleanup.add(async () => {
-        if (codexConnection.process.exitCode !== null || codexConnection.process.signalCode !== null) return;
-        const exited = new Promise<void>(resolve => codexConnection.process.once("exit", () => resolve()));
-        const deadline = setTimeout(() => codexConnection.process.kill("SIGKILL"), 2000);
-        try {
-            codexConnection.process.stdin.end();
-            await exited;
-        } finally {
-            clearTimeout(deadline);
-            codexConnection.connection.dispose();
-        }
-    });
+    // Every test owns its app-server, including tests that mock client methods.
+    // Reap it before deleting the home or starting the next fixture.
+    nativeTestProcesses.add(codexConnection);
     codexConnection.process.on("exit", () => {
         removeDirectoryWithRetry(codexHome);
     });
