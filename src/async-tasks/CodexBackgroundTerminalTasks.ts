@@ -25,6 +25,7 @@ type Task = {
     announcement: Promise<void> | null;
     terminalUpdate: Promise<void> | null;
     terminalPublished: boolean;
+    terminalEvidence?: "event" | "level" | "shutdown" | "stop_receipt";
     state: "running" | "stopping" | TerminalState;
 };
 
@@ -59,6 +60,7 @@ export class CodexBackgroundTerminalTasks {
         private readonly rootSessionId: string,
         private appServer: CodexAppServerClient,
         private readonly session: ACPSessionConnection,
+        private readonly terminalEvidence = false,
     ) {}
 
     async handleNotification(
@@ -150,7 +152,7 @@ export class CodexBackgroundTerminalTasks {
         const errors: unknown[] = [];
         for (const task of [...this.tasks.values()]) {
             try {
-                await this.finish(task, state);
+                await this.finish(task, state, "shutdown");
             } catch (error) {
                 errors.push(error);
             }
@@ -203,7 +205,7 @@ export class CodexBackgroundTerminalTasks {
                 if (task.state === "stopping") task.state = "running";
                 return false;
             }
-            await this.finish(task, "stopped");
+            await this.finish(task, "stopped", "stop_receipt");
             return true;
         } catch (error) {
             if (task.state === "stopping") task.state = "running";
@@ -259,7 +261,7 @@ export class CodexBackgroundTerminalTasks {
                 && task.publication === "published"
                 && (task.state === "running" || task.state === "stopping")
                 && !liveTaskIds.has(task.itemId)) {
-                await this.finish(task, "stopped");
+                await this.finish(task, "stopped", "level");
             }
         }
     }
@@ -390,9 +392,10 @@ export class CodexBackgroundTerminalTasks {
         return task;
     }
 
-    private async finish(task: Task, state: TerminalState): Promise<void> {
+    private async finish(task: Task, state: TerminalState, evidence: Task["terminalEvidence"] = "event"): Promise<void> {
         if (task.state === "running" || task.state === "stopping") {
             task.state = state;
+            task.terminalEvidence = evidence;
         } else if (task.state !== state) {
             return;
         }
@@ -411,6 +414,8 @@ export class CodexBackgroundTerminalTasks {
             sessionUpdate: "async_task_state_update",
             asyncTaskId: task.asyncTaskId,
             state: task.state,
+            // RPC acceptance, disappearance, and adapter shutdown do not prove process exit.
+            ...(this.terminalEvidence ? {_meta: {cloudcode: {terminalEvidence: task.terminalEvidence}}} : {}),
             toolCallId: task.itemId,
         }, task.sessionId);
         task.terminalUpdate = terminalUpdate;

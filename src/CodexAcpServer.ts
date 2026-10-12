@@ -1128,6 +1128,7 @@ export class CodexAcpServer {
             sessionId,
             this.codexAcpClient.appServerClient,
             new ACPSessionConnection(this.connection, sessionId),
+            this.clientCapabilities?._meta?.["cloudcode"] != null,
         );
     }
 

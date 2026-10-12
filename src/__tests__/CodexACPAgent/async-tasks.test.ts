@@ -21,6 +21,18 @@ import {
 type CommandExecutionItem = Extract<ThreadItem, {type: "commandExecution"}>;
 
 describe("Codex background terminal tasks", () => {
+    it("distinguishes disappearance from a native command completion", async () => {
+        const fixture = createFixture(true, undefined, true);
+        try {
+            fixture.list.mockResolvedValue(page([terminal()]));
+            await fixture.tasks.handleNotification(started(command()), "thread-1");
+            await fixture.tasks.sync();
+            fixture.list.mockResolvedValue(page([]));
+            await fixture.tasks.sync();
+            expect(fixture.updates.at(-1)).toMatchObject({_meta: {cloudcode: {terminalEvidence: "level"}}});
+        } finally { fixture.tasks.clear(); }
+    });
+
     it("reconciles idle background tasks serially and stops observing after disposal", async () => {
         vi.useFakeTimers();
         const fixture = createFixture();
@@ -638,6 +650,7 @@ describe("Codex background terminal tasks", () => {
 function createFixture(
     enabled = true,
     beforeUpdate?: (update: UpdateSessionEvent) => void | Promise<void>,
+    terminalEvidence = false,
 ) {
     const updates: UpdateSessionEvent[] = [];
     const list = vi.fn<() => Promise<ThreadBackgroundTerminalsListResponse>>();
@@ -658,7 +671,7 @@ function createFixture(
         updates,
         list,
         terminate,
-        tasks: new CodexBackgroundTerminalTasks(enabled, "thread-1", appServer, session),
+        tasks: new CodexBackgroundTerminalTasks(enabled, "thread-1", appServer, session, terminalEvidence),
     };
 }
 
