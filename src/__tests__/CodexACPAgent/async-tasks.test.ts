@@ -21,6 +21,19 @@ import {
 type CommandExecutionItem = Extract<ThreadItem, {type: "commandExecution"}>;
 
 describe("Codex background terminal tasks", () => {
+    it("publishes the bounded native output snapshot before terminal evidence", async () => {
+        const fixture = createFixture(true, undefined, true);
+        try {
+            fixture.list.mockResolvedValue(page([terminal()]));
+            await fixture.tasks.handleNotification(started(command()), "thread-1");
+            await fixture.tasks.sync();
+            await fixture.tasks.handleNotification(completed({...command(), status:"completed", aggregatedOutput:"early\nlate\n"}), "thread-1");
+            const output = fixture.updates.find(update => (update as any)._meta?.cloudcode?.outputSnapshot);
+            expect(output).toMatchObject({toolCallId:"command-1",_meta:{cloudcode:{outputSnapshot:{data:"early\nlate\n",start:0}}}});
+            expect(fixture.updates.at(-1)).toMatchObject({state:"completed",_meta:{cloudcode:{terminalEvidence:"event"}}});
+        } finally {fixture.tasks.clear();}
+    });
+
     it("distinguishes disappearance from a native command completion", async () => {
         const fixture = createFixture(true, undefined, true);
         try {

@@ -108,7 +108,18 @@ export class CodexBackgroundTerminalTasks {
     ): Promise<void> {
         if (!this.isActive()) return;
         const task = this.tasks.get(wireTaskId(this.rootSessionId, threadId, item.id));
-        if (task) await this.finish(task, item.status === "completed" ? "completed" : "failed");
+        if (task) {
+            // app-server can omit early output deltas while still returning the complete native snapshot.
+            // Do not append this snapshot as a delta: clients must replace their retained byte window.
+            if (this.terminalEvidence && typeof item.aggregatedOutput === "string") {
+                const bytes = Buffer.from(item.aggregatedOutput);
+                let start = Math.max(0, bytes.length - 1048576);
+                while (start < bytes.length && (bytes[start]! & 0xc0) === 0x80) start++;
+                await this.session.update({sessionUpdate:"tool_call_update",toolCallId:task.itemId,
+                    _meta:{cloudcode:{outputSnapshot:{data:bytes.subarray(start).toString(),start}}}},task.sessionId);
+            }
+            await this.finish(task, item.status === "completed" ? "completed" : "failed");
+        }
     }
 
     refresh(threadId: string = this.rootSessionId, sessionId: string = this.rootSessionId): void {
