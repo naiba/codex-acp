@@ -1,3 +1,6 @@
+import {existsSync, realpathSync} from "node:fs";
+// The fixture root may be a real symlink on the developer machine.
+const workspaceRoot = existsSync("/workspace") ? realpathSync("/workspace") : "/workspace";
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import * as acp from "@agentclientprotocol/sdk";
 import {
@@ -134,7 +137,7 @@ describe("agent file-change report lifecycle", () => {
                     version: 1,
                     requestId: "request-42",
                     status: "reported",
-                    paths: ["/workspace/src/Main.kt"],
+                    paths: [`${workspaceRoot}/src/Main.kt`],
                     declaredComplete: false,
                     truncated: false,
                     uncertainty: "Codex turn diffs may omit same-content renames and changes made outside apply_patch, including shell commands, version-control commands, generators, and child processes.",
@@ -164,7 +167,7 @@ describe("agent file-change report lifecycle", () => {
         );
 
         expect(reportedUpdates(fixture)[0]).toMatchObject({
-            _meta: {jetbrains: {air: {agentFileChangeReport: {paths: ["/workspace/final.txt"]}}}},
+            _meta: {jetbrains: {air: {agentFileChangeReport: {paths: [`${workspaceRoot}/final.txt`]}}}},
         });
     });
 
