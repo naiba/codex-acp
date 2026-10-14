@@ -45,7 +45,8 @@ it("native Codex retains appended roles across turns, compaction, fork and proce
     const open = async () => {
         native = startCodexConnection(resolve("node_modules/.bin/codex"), {...process.env, HOME:home, CODEX_HOME:home});
         const app = new CodexAppServerClient(native.connection), client = new CodexAcpClient(app);
-        await client.initialize({protocolVersion:1});
+        // The app-server client now receives client identity only; ACP negotiates the wire version.
+        await client.initialize({});
         return {app,client};
     };
     const close = async () => {

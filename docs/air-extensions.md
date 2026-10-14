@@ -245,6 +245,18 @@ The adapter keeps them where they are.
 | `quota` | `PromptResponse._meta.quota` | Token usage of the whole turn, the same counts as `PromptResponse.usage`: `token_count` and one `model_usage` entry for the current model, or `null` and `[]` when Codex reported no usage for the prompt, as for a prompt that started no turn. |
 | `authStatus` | `initialize` response `agentCapabilities._meta.authStatus` | The agent pushes `_auth/status_update`. The object carries no payload. |
 
+## Auth source display
+
+The agent-owned provider ID comes from `getAgentConfiguredModelProvider()`: launch options take priority over the effective app-server `configRead`, and client-owned `providers/set` routing is ignored for identity reporting.
+
+An active `model_provider` ID equal to `wire` after trimming whitespace and ignoring case is displayed as:
+
+```json
+{ "authStatus": { "kind": "gateway", "label": "JetBrains Air Gateway" } }
+```
+
+The configured friendly `name`, URL, host and route are not checked. An unused provider or another ID whose friendly name is `wire` does not match. This is a weak display heuristic, not proof of configuration provenance or access rights. This payload omits `detail` and `account` and contains no keys, headers or private routes. Both the initial push and subsequent status publication use the same classification and existing duplicate suppression. Other providers and gateway authentication names retain their previous presentation.
+
 ## Zed conventions
 
 The adapter keeps these Zed conventions for every client:
@@ -996,6 +1008,7 @@ AIR uses `session/list` as its index of Codex threads when it declares `sessionI
 Everything in this section applies only to such a client. The `initialize` answer to it lists `sessionIndex`,
 `sessionArchive`, `sessionRename` and `sessionListSubscribe` in `_meta.jetbrains.air.capabilities`.
 Another client, AIR included, keeps the old `session/list`, `session/delete` and `initialize` answers.
+ACP v1 and v2 connections get the same session index.
 
 The extension follows two ACP RFDs field for field: the session list extensions RFD (`limit`, order, row fields)
 and [RFD #2161](https://github.com/agentclientprotocol/agent-client-protocol/pull/2161)
